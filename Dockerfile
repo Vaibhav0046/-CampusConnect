@@ -1,5 +1,13 @@
-FROM eclipse-temurin:17
+FROM eclipse-temurin:21
 
-COPY target/QuestionBank-0.0.1-SNAPSHOT.jar app.jar
+WORKDIR /app
 
-ENTRYPOINT ["java","-jar","/app.jar"]
+COPY . .
+
+RUN chmod +x mvnw
+
+RUN ./mvnw clean package -DskipTests
+
+EXPOSE 8080
+
+CMD ["java","-jar","target/QuestionBank-0.0.1-SNAPSHOT.jar"]
