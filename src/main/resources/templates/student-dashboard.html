@@ -1,0 +1,993 @@
+<!DOCTYPE html>
+<html lang="en" data-bs-theme="dark" xmlns:th="http://www.thymeleaf.org">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Student Academic Workspace - ExamCloud Pro</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.min.css">
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <link rel="stylesheet" th:href="@{/css/style.css}">
+    <style>
+        body { font-family: 'Plus Jakarta Sans', sans-serif; }
+
+        .progress-bar-glow { box-shadow: 0 0 10px rgba(59, 130, 246, 0.5); }
+
+        .badge-card {
+            border: 1px solid var(--border-color);
+            background: rgba(255,255,255,0.02);
+            border-radius: 12px;
+            padding: 15px;
+            text-align: center;
+            transition: all 0.3s ease;
+        }
+        .badge-card.earned {
+            border-color: #fbbf24;
+            background: rgba(251,191,36,0.05);
+            box-shadow: 0 0 15px rgba(251,191,36,0.15);
+        }
+        .badge-icon { font-size: 2.2rem; color: #475569; }
+        .badge-card.earned .badge-icon { color: #fbbf24; text-shadow: 0 0 10px rgba(251,191,36,0.3); }
+
+        /* ── EXAM: Option card base style ── */
+        .option-card {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            border: 1.5px solid rgba(255,255,255,0.1);
+            border-radius: 10px;
+            padding: 10px 14px;
+            cursor: pointer;
+            transition: border-color 0.2s, background 0.2s, box-shadow 0.2s;
+            user-select: none;
+        }
+        .option-card:hover {
+            border-color: rgba(99,179,237,0.5);
+            background: rgba(99,179,237,0.05);
+        }
+
+        /* Selected by the student */
+        .option-card.selected {
+            border-color: #3b82f6;
+            background: rgba(59,130,246,0.12);
+            box-shadow: 0 0 0 3px rgba(59,130,246,0.2);
+        }
+
+        /* Correct answer reveal (post-submit review) */
+        .option-card.correct {
+            border-color: #10b981 !important;
+            background: rgba(16,185,129,0.12) !important;
+            box-shadow: 0 0 0 3px rgba(16,185,129,0.2) !important;
+        }
+
+        /* Wrong answer picked by student */
+        .option-card.wrong {
+            border-color: #ef4444 !important;
+            background: rgba(239,68,68,0.12) !important;
+            box-shadow: 0 0 0 3px rgba(239,68,68,0.2) !important;
+        }
+
+        /* Hide actual radio inputs; use visual cards instead */
+        .option-card input[type="radio"] { display: none; }
+
+        .option-letter {
+            width: 28px;
+            height: 28px;
+            border-radius: 50%;
+            background: rgba(255,255,255,0.07);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-weight: 700;
+            font-size: 0.8rem;
+            flex-shrink: 0;
+            transition: background 0.2s, color 0.2s;
+        }
+        .option-card.selected .option-letter { background: #3b82f6; color: #fff; }
+        .option-card.correct .option-letter  { background: #10b981 !important; color: #fff !important; }
+        .option-card.wrong   .option-letter  { background: #ef4444 !important; color: #fff !important; }
+
+        /* Result summary banner */
+        .result-summary-banner {
+            border-radius: 14px;
+            padding: 20px 24px;
+            margin-bottom: 24px;
+            border: 1px solid;
+        }
+        .result-summary-banner.passed {
+            background: rgba(16,185,129,0.08);
+            border-color: rgba(16,185,129,0.3);
+        }
+        .result-summary-banner.failed {
+            background: rgba(239,68,68,0.08);
+            border-color: rgba(239,68,68,0.3);
+        }
+    </style>
+</head>
+<body>
+
+<!-- Toast container -->
+<div class="toast-container position-fixed top-0 end-0 p-3" id="notification-container" style="z-index:1080;">
+    <div th:each="notif : ${unreadNotifications}" class="toast show align-items-center text-white bg-primary border-0 mb-2 shadow" role="alert" aria-live="assertive" aria-atomic="true">
+        <div class="d-flex">
+            <div class="toast-body"><i class="bi bi-bell-fill me-2"></i><span th:text="${notif.message}">Notification</span></div>
+            <button type="button" class="btn-close btn-close-white me-2 m-auto" data-bs-dismiss="toast" aria-label="Close"></button>
+        </div>
+    </div>
+</div>
+
+<div class="container-fluid">
+    <div class="row">
+        <!-- Sidebar -->
+        <aside class="col-12 col-md-3 col-xl-2 px-sm-2 px-0 sidebar d-flex flex-column">
+            <div class="d-flex flex-column align-items-center align-items-sm-start px-3 pt-4 text-white min-vh-100 w-100">
+                <a href="javascript:void(0)" class="d-flex align-items-center pb-3 mb-md-3 me-md-auto text-decoration-none">
+                    <span class="fs-4 fw-bold text-primary"><i class="bi bi-cloud-check-fill me-2"></i>ExamCloud</span>
+                </a>
+                <hr class="w-100 text-secondary">
+                <ul class="nav nav-pills flex-column mb-auto w-100">
+                    <li class="nav-item mb-2">
+                        <a href="javascript:void(0)" class="nav-link active align-middle px-3 py-2" id="tab-metrics-btn" onclick="switchTab('metrics')">
+                            <i class="bi bi-grid-fill me-2"></i><span>Dashboard Home</span>
+                        </a>
+                    </li>
+                </ul>
+                <hr class="w-100 text-secondary">
+                <div class="w-100 pb-4">
+                    <button class="btn btn-outline-secondary w-100 mb-3" onclick="toggleTheme()">
+                        <i class="bi bi-brightness-high text-warning me-2"></i><span>Toggle Mode</span>
+                    </button>
+                    <a th:href="@{/auth/logout}" class="btn btn-danger w-100">
+                        <i class="bi bi-box-arrow-right me-2"></i>Sign Out
+                    </a>
+                </div>
+            </div>
+        </aside>
+
+        <!-- Main Workspace -->
+        <main class="col-12 col-md-9 col-xl-10 py-4 px-4">
+
+            <header class="d-flex flex-column flex-sm-row justify-content-between align-items-start align-items-sm-center border-bottom pb-3 mb-4 gap-2">
+                <div>
+                    <h1 class="h2 fw-bold mb-1" th:text="'Welcome, ' + ${student.name}">Welcome Scholar</h1>
+                    <p class="text-muted small mb-0">Dynamic personal academic metrics gateway</p>
+                </div>
+                <div class="badge bg-success bg-opacity-10 text-success p-2 rounded-3 d-flex align-items-center">
+                    <i class="bi bi-circle-fill me-2 small"></i> Active Scholar Session
+                </div>
+            </header>
+
+            <!-- Panel: Metrics Dashboard -->
+            <section id="panel-metrics">
+
+                <!-- KPI Cards -->
+                <div class="row g-4 mb-4">
+                    <div class="col-12 col-sm-4">
+                        <div class="card p-3 shadow-sm border-0 bg-primary bg-opacity-10 text-primary h-100">
+                            <h6 class="text-uppercase text-muted small fw-bold mb-2">Available Exams</h6>
+                            <h3 class="fw-bold mb-0" th:text="${availableTests.size()}">0</h3>
+                        </div>
+                    </div>
+                    <div class="col-12 col-sm-4">
+                        <div class="card p-3 shadow-sm border-0 bg-success bg-opacity-10 text-success h-100">
+                            <h6 class="text-uppercase text-muted small fw-bold mb-2">Exam Average Grade</h6>
+                            <h3 class="fw-bold mb-0" th:text="${averageScore} + '%'">0.0%</h3>
+                        </div>
+                    </div>
+                    <div class="col-12 col-sm-4">
+                        <div class="card p-3 shadow-sm border-0 h-100" style="color:var(--accent-purple)!important;background-color:rgba(139,92,246,0.1)!important;">
+                            <h6 class="text-uppercase text-muted small fw-bold mb-2">Coding Solves Progress</h6>
+                            <div class="d-flex align-items-center gap-3">
+                                <h3 class="fw-bold mb-0" th:text="${totalCodingSolved}">0</h3>
+                                <span class="badge rounded border px-2" style="color:#8b5cf6!important;border-color:rgba(139,92,246,0.25)!important;" th:text="${codingSolvedPercent} + '% Ratio'">0%</span>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Subjects Grid -->
+                <h4 class="fw-bold mb-3"><i class="bi bi-columns-gap me-2 text-primary"></i>Your Subjects Workspace</h4>
+                <div class="row g-4 mb-5" id="subjects-grid">
+                    <div class="col-12 col-sm-6 col-lg-4">
+                        <div class="card subject-card p-4" onclick="openSubjectDetail('Java')">
+                            <div class="d-flex justify-content-between align-items-start mb-3">
+                                <div class="subject-icon"><i class="bi bi-filetype-java text-primary"></i></div>
+                                <span class="badge bg-primary bg-opacity-10 text-primary border border-primary border-opacity-25" th:text="${subjectStats['Java']?.solvedPercent != null ? subjectStats['Java'].solvedPercent + '% Done' : '0% Done'}">0% Done</span>
+                            </div>
+                            <h5 class="fw-bold mb-1">Java Core Programming</h5>
+                            <p class="text-muted small mb-3">OOP, Exception Handling, Collections Framework, JDBC &amp; Multithreading.</p>
+                            <div class="d-flex justify-content-between align-items-center small">
+                                <span class="fw-semibold text-primary"><i class="bi bi-collection me-1"></i>Explore Modules</span>
+                                <i class="bi bi-arrow-right text-muted"></i>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="col-12 col-sm-6 col-lg-4">
+                        <div class="card subject-card p-4" onclick="openSubjectDetail('JavaScript')">
+                            <div class="d-flex justify-content-between align-items-start mb-3">
+                                <div class="subject-icon"><i class="bi bi-filetype-js text-warning"></i></div>
+                                <span class="badge bg-warning bg-opacity-10 text-warning border border-warning border-opacity-25" th:text="${subjectStats['JavaScript']?.solvedPercent != null ? subjectStats['JavaScript'].solvedPercent + '% Done' : '0% Done'}">0% Done</span>
+                            </div>
+                            <h5 class="fw-bold mb-1">JavaScript Basics &amp; Async</h5>
+                            <p class="text-muted small mb-3">Prototypes, Scope, Promises, JSON parser, and Dynamic DOM Manipulation.</p>
+                            <div class="d-flex justify-content-between align-items-center small">
+                                <span class="fw-semibold text-warning"><i class="bi bi-collection me-1"></i>Explore Modules</span>
+                                <i class="bi bi-arrow-right text-muted"></i>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="col-12 col-sm-6 col-lg-4">
+                        <div class="card subject-card p-4" onclick="openSubjectDetail('Python')">
+                            <div class="d-flex justify-content-between align-items-start mb-3">
+                                <div class="subject-icon"><i class="bi bi-filetype-py text-success"></i></div>
+                                <span class="badge bg-success bg-opacity-10 text-success border border-success border-opacity-25" th:text="${subjectStats['Python']?.solvedPercent != null ? subjectStats['Python'].solvedPercent + '% Done' : '0% Done'}">0% Done</span>
+                            </div>
+                            <h5 class="fw-bold mb-1">Python Core &amp; Automation</h5>
+                            <p class="text-muted small mb-3">Decorators, Generators, File Handling, RegEx, and basic scripting structures.</p>
+                            <div class="d-flex justify-content-between align-items-center small">
+                                <span class="fw-semibold text-success"><i class="bi bi-collection me-1"></i>Explore Modules</span>
+                                <i class="bi bi-arrow-right text-muted"></i>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="col-12 col-sm-6 col-lg-4">
+                        <div class="card subject-card p-4" onclick="openSubjectDetail('Spring Boot')">
+                            <div class="d-flex justify-content-between align-items-start mb-3">
+                                <div class="subject-icon"><i class="bi bi-bootstrap-fill" style="color:#10b981!important;"></i></div>
+                                <span class="badge bg-success bg-opacity-10 text-success border border-success border-opacity-25" th:text="${subjectStats['Spring Boot']?.solvedPercent != null ? subjectStats['Spring Boot'].solvedPercent + '% Done' : '0% Done'}">0% Done</span>
+                            </div>
+                            <h5 class="fw-bold mb-1">Spring Boot MVC &amp; JPA</h5>
+                            <p class="text-muted small mb-3">IOC Containers, Rest APIs, Spring Data JPA, Web Security and MVC systems.</p>
+                            <div class="d-flex justify-content-between align-items-center small">
+                                <span class="fw-semibold text-success"><i class="bi bi-collection me-1"></i>Explore Modules</span>
+                                <i class="bi bi-arrow-right text-muted"></i>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="col-12 col-sm-6 col-lg-4">
+                        <div class="card subject-card p-4" onclick="openSubjectDetail('MySQL')">
+                            <div class="d-flex justify-content-between align-items-start mb-3">
+                                <div class="subject-icon"><i class="bi bi-database-fill text-info"></i></div>
+                                <span class="badge bg-info bg-opacity-10 text-info border border-info border-opacity-25" th:text="${subjectStats['MySQL']?.solvedPercent != null ? subjectStats['MySQL'].solvedPercent + '% Done' : '0% Done'}">0% Done</span>
+                            </div>
+                            <h5 class="fw-bold mb-1">MySQL Database Relational</h5>
+                            <p class="text-muted small mb-3">DML/DDL triggers, JOIN schemas, indexes, indexing strategies, normalization.</p>
+                            <div class="d-flex justify-content-between align-items-center small">
+                                <span class="fw-semibold text-info"><i class="bi bi-collection me-1"></i>Explore Modules</span>
+                                <i class="bi bi-arrow-right text-muted"></i>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="col-12 col-sm-6 col-lg-4">
+                        <div class="card subject-card p-4" onclick="openSubjectDetail('DSA')">
+                            <div class="d-flex justify-content-between align-items-start mb-3">
+                                <div class="subject-icon"><i class="bi bi-diagram-3-fill text-danger"></i></div>
+                                <span class="badge bg-danger bg-opacity-10 text-danger border border-danger border-opacity-25" th:text="${subjectStats['DSA']?.solvedPercent != null ? subjectStats['DSA'].solvedPercent + '% Done' : '0% Done'}">0% Done</span>
+                            </div>
+                            <h5 class="fw-bold mb-1">DSA &amp; Problem Solving</h5>
+                            <p class="text-muted small mb-3">Big O analysis, trees, linked structures, recursion, dynamic sorting.</p>
+                            <div class="d-flex justify-content-between align-items-center small">
+                                <span class="fw-semibold text-danger"><i class="bi bi-collection me-1"></i>Explore Modules</span>
+                                <i class="bi bi-arrow-right text-muted"></i>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Badges -->
+                <h4 class="fw-bold mb-3"><i class="bi bi-award me-2 text-warning"></i>Earned Badges &amp; Unlocks</h4>
+                <div class="row g-4 mb-5">
+                    <div class="col-12 col-sm-4">
+                        <div class="badge-card" th:classappend="${badges['Java Master']} ? 'earned' : ''">
+                            <i class="bi bi-cup-hot-fill badge-icon"></i>
+                            <h6 class="fw-bold mt-2 mb-1">Java Master</h6>
+                            <p class="text-muted small mb-0">Solved 2+ Java challenges</p>
+                        </div>
+                    </div>
+                    <div class="col-12 col-sm-4">
+                        <div class="badge-card" th:classappend="${badges['DSA Expert']} ? 'earned' : ''">
+                            <i class="bi bi-diagram-3 badge-icon"></i>
+                            <h6 class="fw-bold mt-2 mb-1">DSA Expert</h6>
+                            <p class="text-muted small mb-0">Solved 2+ DSA challenges</p>
+                        </div>
+                    </div>
+                    <div class="col-12 col-sm-4">
+                        <div class="badge-card" th:classappend="${badges['Streak Expert']} ? 'earned' : ''">
+                            <i class="bi bi-lightning-charge-fill badge-icon"></i>
+                            <h6 class="fw-bold mt-2 mb-1">Streak Expert</h6>
+                            <p class="text-muted small mb-0">Logged 3+ total challenges</p>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Available Tests -->
+                <h4 class="fw-bold mb-3"><i class="bi bi-check2-square me-2 text-success"></i>Available Assessments</h4>
+                <div class="card shadow-sm border-0 p-3 mb-5">
+                    <div class="table-responsive">
+                        <table class="table align-middle">
+                            <thead>
+                                <tr>
+                                    <th>Subject &amp; Title</th>
+                                    <th>Questions</th>
+                                    <th>Total Marks</th>
+                                    <th>Duration</th>
+                                    <th>Scheduled By</th>
+                                    <th>Action</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                <tr th:if="${availableTests.isEmpty()}">
+                                    <td colspan="6" class="text-center py-4 text-muted">No pending mock tests scheduled.</td>
+                                </tr>
+                                <tr th:each="t : ${availableTests}">
+                                    <td>
+                                        <strong th:text="${t.title}">Sample Exam</strong>
+                                        <div class="text-muted small" th:text="${t.questions.iterator().next()?.subject}">Subject</div>
+                                    </td>
+                                    <td th:text="${t.questions.size()} + ' MCQs'">0 MCQs</td>
+                                    <td th:text="${t.totalMarks} + ' Marks'">0 Marks</td>
+                                    <td th:text="${t.duration} + ' Mins'">0 Mins</td>
+                                    <td th:text="${t.faculty.name}">Instructor</td>
+                                    <td>
+                                        <button class="btn btn-primary btn-sm rounded-pill px-3" th:onclick="'launchExam(' + ${t.id} + ')'">
+                                            <i class="bi bi-play-fill me-1"></i>Start Test
+                                        </button>
+                                    </td>
+                                </tr>
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+
+                <!-- Test History -->
+                <h4 class="fw-bold mb-3"><i class="bi bi-clock-history me-2 text-info"></i>Submitted Assessment Logs</h4>
+                <div class="card shadow-sm border-0 p-3">
+                    <div class="table-responsive">
+                        <table class="table align-middle">
+                            <thead>
+                                <tr>
+                                    <th>Exam Title</th>
+                                    <th>Score</th>
+                                    <th>Percentage</th>
+                                    <th>Correct</th>
+                                    <th>Incorrect</th>
+                                    <th>Result</th>
+                                    <th>Review</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                <tr th:if="${testHistory.isEmpty()}">
+                                    <td colspan="7" class="text-center py-4 text-muted">No historical assessment submissions found.</td>
+                                </tr>
+                                <tr th:each="h : ${testHistory}">
+                                    <td><strong th:text="${h.test.title}">Title</strong></td>
+                                    <td th:text="${h.score} + ' / ' + ${h.test.totalMarks}">Score</td>
+                                    <td><strong class="text-primary" th:text="${h.percentage} + '%'">0%</strong></td>
+                                    <td><span class="badge bg-success-subtle text-success px-2 py-1" th:text="${h.correctCount}">0</span></td>
+                                    <td><span class="badge bg-danger-subtle text-danger px-2 py-1" th:text="${h.incorrectCount}">0</span></td>
+                                    <td>
+                                        <span class="badge rounded-pill"
+                                              th:classappend="${h.percentage >= 50} ? 'bg-success-subtle text-success' : 'bg-danger-subtle text-danger'"
+                                              th:text="${h.percentage >= 50} ? 'PASSED' : 'FAILED'">State</span>
+                                    </td>
+                                    <!-- FIX: Review button to show correct answer breakdown -->
+                                    <td>
+                                        <button class="btn btn-sm btn-outline-info rounded-pill px-2"
+                                                th:onclick="'reviewExam(' + ${h.test.id} + ', ' + ${h.id} + ')'">
+                                            <i class="bi bi-eye me-1"></i>Review
+                                        </button>
+                                    </td>
+                                </tr>
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+
+            </section>
+
+            <!-- Panel: Live Exam -->
+            <section id="panel-exam" class="d-none">
+                <div class="card p-4 shadow-sm border-0">
+                    <div class="d-flex justify-content-between align-items-center border-bottom pb-3 mb-4">
+                        <div>
+                            <h3 class="fw-bold mb-0" id="exam-title-display">Live Test Session</h3>
+                            <span class="text-muted small" id="exam-subject-display">Subject Scope</span>
+                        </div>
+                        <div class="badge bg-danger bg-opacity-10 text-danger p-2 rounded border border-danger border-opacity-25 fw-bold fs-6">
+                            <i class="bi bi-stopwatch me-1"></i><span id="exam-timer">00:00</span>
+                        </div>
+                    </div>
+
+                    <form th:action="@{/student/submit-test}" method="POST" id="exam-submission-form">
+                        <input type="hidden" name="testId" id="exam-test-id">
+                        <div id="exam-questions-list">
+                            <!-- Populated by JS -->
+                        </div>
+                        <button type="submit" class="btn btn-success w-100 py-2 mt-4 fw-bold shadow-sm">
+                            <i class="bi bi-cloud-upload me-1"></i>Commit Examination &amp; Finalize Grade
+                        </button>
+                    </form>
+                </div>
+            </section>
+
+            <!-- Panel: Review (correct answer display after exam) -->
+            <section id="panel-review" class="d-none">
+                <div class="card p-4 shadow-sm border-0">
+                    <div class="d-flex justify-content-between align-items-center border-bottom pb-3 mb-4">
+                        <div>
+                            <h3 class="fw-bold mb-0" id="review-title-display">Exam Review</h3>
+                            <span class="text-muted small">Correct answers are highlighted in green. Your wrong picks are in red.</span>
+                        </div>
+                        <button class="btn btn-outline-secondary rounded-pill px-3" onclick="switchTab('metrics')">
+                            <i class="bi bi-arrow-left me-1"></i>Back to Dashboard
+                        </button>
+                    </div>
+
+                    <!-- Result summary banner -->
+                    <div id="review-result-banner"></div>
+
+                    <!-- Question breakdown -->
+                    <div id="review-questions-list"></div>
+                </div>
+            </section>
+
+        </main>
+    </div>
+</div>
+
+<!-- Subject Detail Modal -->
+<div class="modal fade" id="subjectDetailModal" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog modal-xl modal-dialog-centered modal-dialog-scrollable">
+        <div class="modal-content glass-card border-0">
+            <div class="modal-header border-bottom border-secondary border-opacity-25 px-4">
+                <h5 class="modal-title fw-bold" id="subject-modal-title">Subject Portal</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body p-0">
+                <ul class="nav nav-tabs px-4 pt-3 border-secondary border-opacity-25" id="subject-tab" role="tablist">
+                    <li class="nav-item">
+                        <button class="nav-link active" id="s-mcq-tab" data-bs-toggle="tab" data-bs-target="#s-mcq" type="button"><i class="bi bi-file-earmark-text me-1"></i>MCQs Repository</button>
+                    </li>
+                    <li class="nav-item">
+                        <button class="nav-link" id="s-coding-tab" data-bs-toggle="tab" data-bs-target="#s-coding" type="button"><i class="bi bi-code-square me-1"></i>Coding Arena</button>
+                    </li>
+                    <li class="nav-item">
+                        <button class="nav-link" id="s-sync-tab" data-bs-toggle="tab" data-bs-target="#s-sync" type="button"><i class="bi bi-arrow-repeat me-1"></i>Connect Handles</button>
+                    </li>
+                    <li class="nav-item">
+                        <button class="nav-link" id="s-analytics-tab" data-bs-toggle="tab" data-bs-target="#s-analytics" type="button" onclick="initChartGfx()"><i class="bi bi-graph-up me-1"></i>Subject Analytics</button>
+                    </li>
+                </ul>
+                <div class="tab-content p-4" id="subject-tabContent">
+
+                    <!-- MCQs Tab -->
+                    <div class="tab-pane fade show active" id="s-mcq" role="tabpanel">
+                        <div class="row g-3 mb-4">
+                            <div class="col-12 col-md-8">
+                                <input type="text" class="form-control bg-dark bg-opacity-25 border-secondary border-opacity-25" id="sm-search" placeholder="Search MCQs..." onkeyup="filterSubjectMCQs()">
+                            </div>
+                            <div class="col-12 col-md-4">
+                                <select class="form-select bg-dark bg-opacity-25 border-secondary border-opacity-25" id="sm-difficulty" onchange="filterSubjectMCQs()">
+                                    <option value="ALL">All Difficulties</option>
+                                    <option value="Easy">Easy Level</option>
+                                    <option value="Medium">Medium Level</option>
+                                    <option value="Hard">Hard Level</option>
+                                </select>
+                            </div>
+                        </div>
+                        <div id="subject-mcq-container"></div>
+                    </div>
+
+                    <!-- Coding Tab -->
+                    <div class="tab-pane fade" id="s-coding" role="tabpanel">
+                        <div class="d-flex justify-content-between align-items-center mb-3">
+                            <h6 class="fw-bold mb-0">Global Platform Challenges</h6>
+                            <span class="badge border px-3 py-2" id="subject-coding-counter" style="color:#8b5cf6!important;border-color:rgba(139,92,246,0.25)!important;">0 Challenges</span>
+                        </div>
+                        <div class="table-responsive">
+                            <table class="table align-middle" id="subject-coding-table">
+                                <thead>
+                                    <tr><th>Problem</th><th>Platform</th><th>Difficulty</th><th>Weight</th><th>Status</th><th>Action</th></tr>
+                                </thead>
+                                <tbody></tbody>
+                            </table>
+                        </div>
+                    </div>
+
+                    <!-- Connect Handles Tab -->
+                    <div class="tab-pane fade" id="s-sync" role="tabpanel">
+                        <h5 class="fw-bold mb-1">Integrate Platform Profiles</h5>
+                        <p class="text-muted small mb-4">Provide your profile names to synchronize solving states.</p>
+                        <form th:action="@{/student/connect-handles}" method="POST" class="mb-4">
+                            <div class="row g-3 mb-4">
+                                <div class="col-12 col-md-4">
+                                    <label class="form-label text-muted small fw-medium">LeetCode Handle</label>
+                                    <div class="input-group">
+                                        <span class="input-group-text"><i class="bi bi-code-slash text-warning"></i></span>
+                                        <input type="text" name="leetcodeUsername" th:value="${userCodingProfile?.leetcodeUsername}" class="form-control" placeholder="username_lc">
+                                    </div>
+                                </div>
+                                <div class="col-12 col-md-4">
+                                    <label class="form-label text-muted small fw-medium">HackerRank Handle</label>
+                                    <div class="input-group">
+                                        <span class="input-group-text"><i class="bi bi-hash text-success"></i></span>
+                                        <input type="text" name="hackerrankUsername" th:value="${userCodingProfile?.hackerrankUsername}" class="form-control" placeholder="username_hr">
+                                    </div>
+                                </div>
+                                <div class="col-12 col-md-4">
+                                    <label class="form-label text-muted small fw-medium">CodeChef Handle</label>
+                                    <div class="input-group">
+                                        <span class="input-group-text"><i class="bi bi-award-fill text-danger"></i></span>
+                                        <input type="text" name="codechefUsername" th:value="${userCodingProfile?.codechefUsername}" class="form-control" placeholder="username_cc">
+                                    </div>
+                                </div>
+                            </div>
+                            <button type="submit" class="btn btn-primary px-4 py-2 fw-semibold"><i class="bi bi-save me-1"></i>Connect Handles</button>
+                        </form>
+                        <hr class="my-4 text-secondary opacity-25">
+                        <h5 class="fw-bold mb-1 text-success"><i class="bi bi-lightning-charge me-1"></i>Sync Platform Data</h5>
+                        <p class="text-muted small mb-3">Triggers background evaluation engine to pull solve results.</p>
+                        <form th:action="@{/student/sync-now}" method="POST">
+                            <button type="submit" class="btn btn-success px-4 py-2 fw-semibold"><i class="bi bi-arrow-repeat me-1"></i>Run Simulated Sync Now</button>
+                        </form>
+                    </div>
+
+                    <!-- Analytics Tab -->
+                    <div class="tab-pane fade" id="s-analytics" role="tabpanel">
+                        <div class="row g-4">
+                            <div class="col-12 col-md-6 col-lg-4">
+                                <div class="card p-3 bg-dark bg-opacity-10 border-secondary border-opacity-25 h-100">
+                                    <h6 class="fw-bold mb-3 small text-uppercase text-muted">Platform Splits</h6>
+                                    <div style="height:220px;position:relative;"><canvas id="chart-doughnut"></canvas></div>
+                                </div>
+                            </div>
+                            <div class="col-12 col-md-6 col-lg-5">
+                                <div class="card p-3 bg-dark bg-opacity-10 border-secondary border-opacity-25 h-100">
+                                    <h6 class="fw-bold mb-3 small text-uppercase text-muted">Daily Solves Curve</h6>
+                                    <div style="height:220px;position:relative;"><canvas id="chart-line"></canvas></div>
+                                </div>
+                            </div>
+                            <div class="col-12 col-lg-3">
+                                <div class="card p-3 bg-dark bg-opacity-10 border-secondary border-opacity-25 h-100">
+                                    <h6 class="fw-bold mb-3 small text-uppercase text-muted">Topic Strength Matrix</h6>
+                                    <div style="height:220px;position:relative;"><canvas id="chart-radar"></canvas></div>
+                                </div>
+                            </div>
+                        </div>
+                        <h6 class="fw-bold mt-4 mb-2 small text-uppercase text-muted">Solves Consistency Streaks</h6>
+                        <div class="card p-3 bg-dark bg-opacity-10 border-secondary border-opacity-25">
+                            <div class="d-flex flex-wrap gap-1" id="streaks-grid"></div>
+                            <div class="d-flex justify-content-between align-items-center mt-3 text-muted small">
+                                <div>Active continuous commits display green.</div>
+                                <div class="d-flex gap-2 align-items-center">
+                                    <span>Not Started</span>
+                                    <div style="width:12px;height:12px;background:rgba(255,255,255,0.05);border-radius:2px;"></div>
+                                    <span>Solved</span>
+                                    <div style="width:12px;height:12px;background:#10b981;border-radius:2px;box-shadow:0 0 5px rgba(16,185,129,0.5);"></div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            <div class="modal-footer border-top border-secondary border-opacity-25 px-4">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Close Workspace</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
+
+<script th:inline="javascript">
+    /*<![CDATA[*/
+    const subjectsData        = /*[[${subjectsData}]]*/ {};
+    const userProfile         = /*[[${userCodingProfile}]]*/ {};
+    const userBadges          = /*[[${badges}]]*/ [];
+    const streakMatrix        = /*[[${streakMatrix}]]*/ [];
+    const dailyActivityData   = /*[[${dailyActivity}]]*/ [];
+    const platformRatiosData  = /*[[${platformRatios}]]*/ {};
+    const weaknessRadarData   = /*[[${weaknessRadar}]]*/ {};
+    const activeTestsList     = /*[[${availableTests}]]*/ [];
+    /*
+      testHistory is an object map keyed by result-id → { testId, score, percentage,
+      correctCount, incorrectCount, answers: { questionId: chosenOptionLetter } }
+      populated by the controller for the review feature.
+    */
+    const testResultsMap      = /*[[${testResultsMap}]]*/ {};
+    /*]]>*/
+</script>
+
+<script>
+    /* ─────────────────────────────────────────────
+       THEME
+    ───────────────────────────────────────────── */
+    const initTheme = () => {
+        document.documentElement.setAttribute('data-bs-theme', localStorage.getItem('theme') || 'dark');
+    };
+    const toggleTheme = () => {
+        const t = document.documentElement.getAttribute('data-bs-theme') === 'dark' ? 'light' : 'dark';
+        document.documentElement.setAttribute('data-bs-theme', t);
+        localStorage.setItem('theme', t);
+    };
+
+    window.addEventListener('DOMContentLoaded', () => {
+        initTheme();
+        document.querySelectorAll('.toast').forEach(t => bootstrap.Toast.getOrCreateInstance(t).show());
+    });
+
+    /* ─────────────────────────────────────────────
+       TAB SWITCHING  (metrics | exam | review)
+    ───────────────────────────────────────────── */
+    function switchTab(tabName) {
+        ['metrics', 'exam', 'review'].forEach(p => {
+            document.getElementById(`panel-${p}`).classList.add('d-none');
+        });
+        document.getElementById(`panel-${tabName}`).classList.remove('d-none');
+
+        // Sidebar active state (only metrics tab has a sidebar link)
+        const metricsBtn = document.getElementById('tab-metrics-btn');
+        metricsBtn.classList.toggle('active', tabName === 'metrics');
+    }
+
+    /* ─────────────────────────────────────────────
+       SUBJECT MODAL
+    ───────────────────────────────────────────── */
+    let activeSubject = 'Java';
+
+    function openSubjectDetail(subjectName) {
+        activeSubject = subjectName;
+        document.getElementById('subject-modal-title').innerHTML =
+            `<i class="bi bi-folder2-open me-2 text-warning"></i>Subject Portal Arena: ${subjectName}`;
+        bootstrap.Tab.getOrCreateInstance(document.getElementById('s-mcq-tab')).show();
+        filterSubjectMCQs();
+        loadSubjectCodingQuestions();
+        bootstrap.Modal.getOrCreateInstance(document.getElementById('subjectDetailModal')).show();
+    }
+
+    function filterSubjectMCQs() {
+        const query = document.getElementById('sm-search').value.toLowerCase().trim();
+        const diff  = document.getElementById('sm-difficulty').value;
+        const allMcqs = (subjectsData[activeSubject]?.mcqs) || [];
+
+        const filtered = allMcqs.filter(q =>
+            (!query || q.question.toLowerCase().includes(query) || (q.topic || '').toLowerCase().includes(query)) &&
+            (diff === 'ALL' || q.difficulty === diff)
+        );
+
+        const container = document.getElementById('subject-mcq-container');
+        container.innerHTML = '';
+
+        if (filtered.length === 0) {
+            container.innerHTML = '<div class="text-muted py-4 text-center">No matching MCQ questions in bank.</div>';
+            return;
+        }
+
+        filtered.forEach((q, idx) => {
+            let badgeClass = 'bg-secondary';
+            if (q.difficulty === 'Easy')   badgeClass = 'bg-success bg-opacity-15 text-success border border-success border-opacity-25';
+            if (q.difficulty === 'Medium') badgeClass = 'bg-warning bg-opacity-15 text-warning border border-warning border-opacity-25';
+            if (q.difficulty === 'Hard')   badgeClass = 'bg-danger bg-opacity-15 text-danger border border-danger border-opacity-25';
+
+            let optsHTML = '<div class="row g-2 mt-2">';
+            const opts = (q.options && q.options.length > 0)
+                ? q.options
+                : [{optionText:'A. Option A'},{optionText:'B. Option B'},{optionText:'C. Option C'},{optionText:'D. Option D'}];
+
+            opts.forEach(opt => {
+                optsHTML += `<div class="col-6"><div class="border rounded p-2 small bg-dark bg-opacity-10">${opt.optionText}</div></div>`;
+            });
+            optsHTML += '</div>';
+
+            container.innerHTML += `
+                <div class="card p-3 mb-3 bg-dark bg-opacity-10 border-secondary border-opacity-25">
+                    <div class="d-flex justify-content-between align-items-start gap-2 mb-2">
+                        <h6 class="fw-bold mb-0">${idx + 1}. ${q.question}</h6>
+                        <span class="badge ${badgeClass}">${q.difficulty}</span>
+                    </div>
+                    <div class="text-muted small">Topic: ${q.topic || 'General'} | Value: ${q.marks || 1} Marks</div>
+                    ${optsHTML}
+                </div>`;
+        });
+    }
+
+    function loadSubjectCodingQuestions() {
+        const tbody  = document.querySelector('#subject-coding-table tbody');
+        const coding = (subjectsData[activeSubject]?.coding) || [];
+        document.getElementById('subject-coding-counter').innerText = `${coding.length} Challenges`;
+        tbody.innerHTML = '';
+
+        if (coding.length === 0) {
+            tbody.innerHTML = '<tr><td colspan="6" class="text-center py-4 text-muted">No coding challenges found.</td></tr>';
+            return;
+        }
+
+        coding.forEach(c => {
+            let platBadge = 'bg-success bg-opacity-25 text-success border border-success border-opacity-25';
+            if (c.platform === 'HackerRank') platBadge = 'bg-danger bg-opacity-25 text-danger border border-danger border-opacity-25';
+            if (c.platform === 'CodeChef')   platBadge = 'bg-warning bg-opacity-25 text-warning border border-warning border-opacity-25';
+
+            let diffBadge = 'bg-success-subtle text-success';
+            if (c.difficulty === 'Medium') diffBadge = 'bg-warning-subtle text-warning';
+            if (c.difficulty === 'Hard')   diffBadge = 'bg-danger-subtle text-danger';
+
+            let statusPill = '<span class="badge bg-secondary-subtle text-secondary"><i class="bi bi-circle me-1"></i>Not Started</span>';
+            if (c.status === 'SOLVED')         statusPill = '<span class="badge bg-success-subtle text-success"><i class="bi bi-check-circle-fill me-1"></i>Solved</span>';
+            if (c.status === 'ATTEMPTED')      statusPill = '<span class="badge bg-warning-subtle text-warning"><i class="bi bi-info-circle-fill me-1"></i>Attempted</span>';
+            if (c.status === 'PENDING_REVIEW') statusPill = '<span class="badge bg-info-subtle text-info"><i class="bi bi-clock-fill me-1"></i>Reviewing</span>';
+
+            tbody.innerHTML += `<tr>
+                <td><strong>${c.title}</strong><div class="text-muted small">${c.topic || 'General'}</div></td>
+                <td><span class="badge ${platBadge}">${c.platform}</span></td>
+                <td><span class="badge ${diffBadge}">${c.difficulty}</span></td>
+                <td>${c.score} Pts</td>
+                <td>${statusPill}</td>
+                <td><a href="${c.problemLink}" target="_blank" class="btn btn-sm btn-outline-info rounded-pill px-3 text-decoration-none small"><i class="bi bi-box-arrow-up-right me-1"></i>Solve</a></td>
+            </tr>`;
+        });
+    }
+
+    /* ─────────────────────────────────────────────
+       CHARTS
+    ───────────────────────────────────────────── */
+    let donutChart, lineChart, radarChart;
+
+    function initChartGfx() {
+        if (donutChart) donutChart.destroy();
+        if (lineChart)  lineChart.destroy();
+        if (radarChart) radarChart.destroy();
+
+        donutChart = new Chart(document.getElementById('chart-doughnut').getContext('2d'), {
+            type: 'doughnut',
+            data: {
+                labels: ['LeetCode','HackerRank','CodeChef'],
+                datasets: [{
+                    data: [platformRatiosData.leetcode||0, platformRatiosData.hackerrank||0, platformRatiosData.codechef||0],
+                    backgroundColor: ['#fbbf24','#10b981','#ef4444'], borderWidth: 0
+                }]
+            },
+            options: { responsive:true, maintainAspectRatio:false, plugins:{legend:{display:false}} }
+        });
+
+        lineChart = new Chart(document.getElementById('chart-line').getContext('2d'), {
+            type: 'line',
+            data: {
+                labels: ['Mon','Tue','Wed','Thu','Fri','Sat','Sun'],
+                datasets: [{
+                    label:'Solves', data: dailyActivityData||[0,0,0,0,0,0,0],
+                    borderColor:'#3b82f6', backgroundColor:'rgba(59,130,246,0.1)', tension:0.3, fill:true
+                }]
+            },
+            options: { responsive:true, maintainAspectRatio:false, plugins:{legend:{display:false}},
+                scales:{ x:{grid:{display:false}}, y:{ticks:{stepSize:1}, grid:{color:'rgba(255,255,255,0.05)'}} } }
+        });
+
+        radarChart = new Chart(document.getElementById('chart-radar').getContext('2d'), {
+            type: 'radar',
+            data: {
+                labels: ['OOP','Loops','Arrays','Strings','Complexity','Logic'],
+                datasets: [{
+                    data: weaknessRadarData||[5,5,5,5,5,5],
+                    borderColor:'#a855f7', backgroundColor:'rgba(168,85,247,0.2)', pointBackgroundColor:'#a855f7'
+                }]
+            },
+            options: { responsive:true, maintainAspectRatio:false, plugins:{legend:{display:false}},
+                scales:{ r:{ grid:{color:'rgba(255,255,255,0.05)'}, angleLines:{color:'rgba(255,255,255,0.05)'},
+                    pointLabels:{color:'#94a3b8'}, ticks:{display:false} } } }
+        });
+
+        const grid   = document.getElementById('streaks-grid');
+        grid.innerHTML = '';
+        const matrix = streakMatrix || [];
+        for (let i = 0; i < 28; i++) {
+            const has = matrix[i] === 1;
+            const div = document.createElement('div');
+            div.title = has ? 'Active solve recorded' : 'No solves';
+            div.style.cssText = `width:14px;height:14px;border-radius:2.5px;cursor:pointer;${
+                has ? 'background:#10b981;box-shadow:0 0 5px rgba(16,185,129,0.5);'
+                    : 'background:rgba(255,255,255,0.05);'}`;
+            grid.appendChild(div);
+        }
+    }
+
+    /* ─────────────────────────────────────────────
+       EXAM: LAUNCH  (with live option-card highlighting)
+    ───────────────────────────────────────────── */
+    let activeTimerInterval;
+
+    function launchExam(testId) {
+        const testObj = activeTestsList.find(t => t.id === testId);
+        if (!testObj) return;
+
+        document.getElementById('exam-test-id').value   = testId;
+        document.getElementById('exam-title-display').innerText   = testObj.title;
+        document.getElementById('exam-subject-display').innerText = 'Scope: MCQ Question Pool';
+
+        const qContainer = document.getElementById('exam-questions-list');
+        qContainer.innerHTML = '';
+
+        testObj.questions.forEach((q, idx) => {
+            // Build option cards (visually styled, hidden real radio inputs for form submission)
+            let optCards = '';
+            q.options.forEach(opt => {
+                optCards += `
+                    <label class="option-card d-flex align-items-center gap-3 mb-2"
+                           onclick="selectOption(this, 'q_${q.id}')">
+                        <input type="radio"
+                               name="answers[${q.id}]"
+                               id="opt_${opt.id}"
+                               value="${opt.optionLetter}"
+                               required>
+                        <span class="option-letter">${opt.optionLetter}</span>
+                        <span class="small">${opt.optionText}</span>
+                    </label>`;
+            });
+
+            qContainer.innerHTML += `
+                <div class="card p-3 mb-4 bg-dark bg-opacity-25 border-secondary border-opacity-15">
+                    <div class="d-flex justify-content-between mb-3">
+                        <h6 class="fw-bold mb-0">Question ${idx + 1}</h6>
+                        <span class="badge bg-secondary bg-opacity-10 text-muted">${q.marks} Marks</span>
+                    </div>
+                    <p class="mb-3">${q.question}</p>
+                    <div class="option-cards-group" id="group_${q.id}">
+                        ${optCards}
+                    </div>
+                </div>`;
+        });
+
+        // Timer
+        let totalSeconds = testObj.duration * 60;
+        const display    = document.getElementById('exam-timer');
+        clearInterval(activeTimerInterval);
+        activeTimerInterval = setInterval(() => {
+            const m = Math.floor(totalSeconds / 60);
+            const s = totalSeconds % 60;
+            display.innerText = `${String(m).padStart(2,'0')}:${String(s).padStart(2,'0')}`;
+            if (totalSeconds <= 0) {
+                clearInterval(activeTimerInterval);
+                alert('Time is up! Submitting exam automatically...');
+                document.getElementById('exam-submission-form').submit();
+            }
+            totalSeconds--;
+        }, 1000);
+
+        switchTab('exam');
+        window.scrollTo({ top: 0, behavior: 'smooth' });
+    }
+
+    /* ─────────────────────────────────────────────
+       EXAM: OPTION SELECTION  ← THE CORE FIX
+       Clicking a label/card visually selects it,
+       deselects siblings, and ticks the radio.
+    ───────────────────────────────────────────── */
+    function selectOption(cardEl, groupId) {
+        // Deselect all cards in this question's group
+        document.querySelectorAll(`#group_${groupId} .option-card`).forEach(c => {
+            c.classList.remove('selected');
+        });
+
+        // Mark clicked card as selected
+        cardEl.classList.add('selected');
+
+        // Tick the hidden radio input inside this card
+        const radio = cardEl.querySelector('input[type="radio"]');
+        if (radio) radio.checked = true;
+    }
+
+    /* ─────────────────────────────────────────────
+       REVIEW: Show correct answers after submission
+       Called from the history table "Review" button.
+       Expects testResultsMap[resultId] = {
+         testId, score, totalMarks, percentage,
+         correctCount, incorrectCount,
+         answers: { "questionId": "chosenLetter" }
+       }
+       and activeTestsList to have the test with
+       options carrying an `correct: true` flag.
+    ───────────────────────────────────────────── */
+    function reviewExam(testId, resultId) {
+        const result  = testResultsMap[String(resultId)] || testResultsMap[resultId];
+        const testObj = activeTestsList.find(t => t.id === testId);
+
+        // If the test is no longer in activeTestsList (already taken),
+        // we may need the controller to also pass completedTests list.
+        // Fall back gracefully.
+        if (!result) {
+            alert('Review data not available. Please contact your instructor.');
+            return;
+        }
+
+        document.getElementById('review-title-display').innerText =
+            testObj ? testObj.title : `Exam #${testId} Review`;
+
+        // Result banner
+        const passed = result.percentage >= 50;
+        document.getElementById('review-result-banner').innerHTML = `
+            <div class="result-summary-banner ${passed ? 'passed' : 'failed'} mb-4">
+                <div class="d-flex align-items-center gap-3 flex-wrap">
+                    <div class="fs-1">${passed ? '🎉' : '📚'}</div>
+                    <div>
+                        <h4 class="fw-bold mb-1 ${passed ? 'text-success' : 'text-danger'}">
+                            ${passed ? 'PASSED' : 'FAILED'} — ${result.percentage}%
+                        </h4>
+                        <div class="text-muted small">
+                            Score: <strong>${result.score} / ${result.totalMarks}</strong> &nbsp;|&nbsp;
+                            <span class="text-success"><i class="bi bi-check-circle me-1"></i>${result.correctCount} Correct</span> &nbsp;|&nbsp;
+                            <span class="text-danger"><i class="bi bi-x-circle me-1"></i>${result.incorrectCount} Incorrect</span>
+                        </div>
+                    </div>
+                </div>
+            </div>`;
+
+        const qList = document.getElementById('review-questions-list');
+        qList.innerHTML = '';
+
+        if (!testObj || !testObj.questions) {
+            qList.innerHTML = '<div class="alert alert-warning">Question details unavailable for review.</div>';
+            switchTab('review');
+            window.scrollTo({ top: 0, behavior: 'smooth' });
+            return;
+        }
+
+        const chosenAnswers = result.answers || {};  // { "questionId": "A" }
+
+        testObj.questions.forEach((q, idx) => {
+            // Find which letter is correct from the options array
+            const correctOpt = q.options.find(o => o.correct === true);
+            const correctLetter = correctOpt ? correctOpt.optionLetter : null;
+            const chosenLetter  = chosenAnswers[String(q.id)] || chosenAnswers[q.id] || null;
+
+            let optCardsHtml = '';
+            q.options.forEach(opt => {
+                let extraClass = '';
+                // Always highlight the correct answer green
+                if (opt.optionLetter === correctLetter) {
+                    extraClass = 'correct';
+                }
+                // If student chose wrong, highlight their pick red
+                if (opt.optionLetter === chosenLetter && opt.optionLetter !== correctLetter) {
+                    extraClass = 'wrong';
+                }
+
+                const icon = opt.optionLetter === correctLetter
+                    ? '<i class="bi bi-check-circle-fill text-success ms-auto"></i>'
+                    : (opt.optionLetter === chosenLetter ? '<i class="bi bi-x-circle-fill text-danger ms-auto"></i>' : '');
+
+                optCardsHtml += `
+                    <div class="option-card ${extraClass} mb-2" style="cursor:default;">
+                        <span class="option-letter">${opt.optionLetter}</span>
+                        <span class="small flex-grow-1">${opt.optionText}</span>
+                        ${icon}
+                    </div>`;
+            });
+
+            // Question-level result indicator
+            const qCorrect  = chosenLetter === correctLetter;
+            const qBadge    = chosenLetter === null
+                ? '<span class="badge bg-secondary-subtle text-secondary">Not Answered</span>'
+                : (qCorrect
+                    ? '<span class="badge bg-success-subtle text-success"><i class="bi bi-check me-1"></i>Correct</span>'
+                    : '<span class="badge bg-danger-subtle text-danger"><i class="bi bi-x me-1"></i>Incorrect</span>');
+
+            qList.innerHTML += `
+                <div class="card p-3 mb-4 border-0 bg-dark bg-opacity-25">
+                    <div class="d-flex justify-content-between align-items-start mb-3 gap-2 flex-wrap">
+                        <h6 class="fw-bold mb-0">Q${idx + 1}. ${q.question}</h6>
+                        <div class="d-flex align-items-center gap-2">
+                            ${qBadge}
+                            <span class="badge bg-secondary bg-opacity-10 text-muted">${q.marks} Marks</span>
+                        </div>
+                    </div>
+                    <div>${optCardsHtml}</div>
+                    ${correctLetter ? `<div class="mt-2 text-muted small"><i class="bi bi-lightbulb-fill text-warning me-1"></i>Correct Answer: <strong class="text-success">${correctLetter}</strong></div>` : ''}
+                </div>`;
+        });
+
+        switchTab('review');
+        window.scrollTo({ top: 0, behavior: 'smooth' });
+    }
+</script>
+</body>
+</html>
